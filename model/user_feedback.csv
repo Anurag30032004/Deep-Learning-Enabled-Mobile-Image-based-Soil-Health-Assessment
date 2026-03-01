@@ -1,0 +1,13 @@
+timestamp,image_name,soil_type,confidence,moisture,salinity,om_index,ph_tendency,soil_health,expert_explanation,user_comment,user_correction
+2026-02-28T12:51:25.072469,Final Decision,Alluvial Soil,91.10%,71.02,83.22,4.50,Neutral to Slightly Acidic,Poor,-,,
+2026-03-01T13:16:25.827752,Final Decision,Alluvial Soil,91.10%,71.02,83.22,4.50,Neutral to Slightly Acidic,Poor,- -,,
+2026-03-01T13:33:01.624498,Final Decision,Alluvial Soil,91.10%,71.02,83.22,4.50,Neutral to Slightly Acidic,Poor,- -,,
+2026-03-01T13:38:24.960246,Final Decision,Alluvial Soil,91.10%,71.02,83.22,4.50,Neutral to Slightly Acidic,Poor,- -,,
+2026-03-01T13:43:54.852454,Final Decision,Alluvial Soil,91.10%,71.02,83.22,4.50,Neutral to Slightly Acidic,Poor,- -,,
+2026-03-01T13:53:53.387620,Final Decision,Alluvial Soil,91.10%,43.58,62.72,3.06,Neutral to Slightly Acidic,Excellent,- -,,
+2026-03-01T14:05:59.535849,Final Decision,Alluvial Soil,91.10%,43.58,34.86,3.06,6.4 (Slightly Acidic),Excellent,- -,,
+2026-03-01T14:06:09.576050,Final Decision,Alluvial Soil,91.10%,43.58,34.86,3.06,6.4 (Slightly Acidic),Excellent,- -,,
+2026-03-01T14:06:14.544485,Final Decision,Alluvial Soil,91.10%,43.58,34.86,3.06,6.4 (Slightly Acidic),Excellent,- -,,
+2026-03-01T14:06:18.560214,Final Decision,Alluvial Soil,91.10%,43.58,34.86,3.06,6.4 (Slightly Acidic),Excellent,- -,,
+2026-03-01T14:06:35.951877,Final Decision,Alluvial Soil,91.10%,43.58,34.86,3.06,6.4 (Slightly Acidic),Excellent,- -,,
+2026-03-01T14:29:05.459588,Final Decision,Alluvial Soil,91.10%,45.33,53.04,3.13,7.9 (Slightly Alkaline),Excellent,- -,,
