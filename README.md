@@ -38,6 +38,12 @@ RGB Image Input
       │
       ▼
 ┌─────────────────────┐
+│ 🔬 Auto-Calibration │  Lighting Detection → CLAHE Exposure → Gray World WB
+│ (Self-Calibrating)  │  → Calibrated Image + Calibration Report
+└─────────────────────┘
+      │
+      ▼
+┌─────────────────────┐
 │   Preprocessing     │  Resize → Normalize → EfficientNetV2 preprocess_input
 └─────────────────────┘
       │
@@ -70,13 +76,14 @@ RGB Image Input
 └─────────────────────┘
       │
       ▼
-   Final Report + Individual Image Results
+   Final Report + Individual Image Results + Calibration Report
 ```
 
 ---
 
 ## Features
 
+- 🔬 **Self-Calibrating AI** — Automatic lighting detection & image normalization (CLAHE + Gray World) before classification
 - 🌱 **Soil Type Classification** — 7 classes: Alluvial, Black, Laterite, Red, Yellow, Mountain, Arid
 - 💧 **Moisture Estimation** — Albedo-based (Gomez et al. 2008)
 - 🧂 **Salinity Index** — Brightness × (1 − Saturation) method (Metternicht & Zinck 2003)
@@ -86,6 +93,7 @@ RGB Image Input
 - 📊 **Batch Processing** — All images run in a single batched model inference for speed
 - 🗂️ **Upload History** — Session-based image history automatically saved
 - 💬 **User Feedback** — Expert corrections logged to CSV for future model improvement
+- 🖼️ **Before/After Preview** — Side-by-side comparison of original vs calibrated images
 
 ---
 
@@ -127,6 +135,7 @@ tarp_project/
 ├── Block Diagram.svg
 │
 ├── model/
+│   ├── calibrator.py             # Self-calibrating AI: lighting detection + normalization
 │   ├── predictor.py              # Feature engine + inference pipeline
 │   ├── config.py                 # Paths and constants
 │   ├── feedback.py               # User feedback CSV logger
@@ -188,11 +197,13 @@ Open your browser at `http://127.0.0.1:7860`
 ## Usage
 
 1. **Upload** one or more soil images using the file uploader
-2. Click **Determine Soil Health**
-3. View the **Final Decision** table — a Property/Value summary for the overall batch
-4. Expand **Show Individual Image Results** to see per-image breakdowns
-5. Optionally add a **user comment or correction** to provide feedback
-6. Click **Reset** to clear all images and start a new session
+2. (Optional) Toggle **🔬 Enable Auto-Calibration** — on by default, normalizes lighting & color before classification
+3. Click **Determine Soil Health**
+4. View the **Final Decision** table — a Property/Value summary for the overall batch
+5. Expand **Show Individual Image Results** to see per-image breakdowns
+6. Expand **🔬 Calibration Report** to see detected lighting conditions, corrections applied, and before/after image comparisons
+7. Optionally add a **user comment or correction** to provide feedback
+8. Click **Reset** to clear all images and start a new session
 
 ---
 
@@ -210,12 +221,46 @@ Open your browser at `http://127.0.0.1:7860`
 
 ---
 
+## Self-Calibrating AI — Automatic Calibration Layer
+
+Mobile-captured soil images vary widely in lighting, white balance, and exposure. The **Self-Calibrating AI** layer automatically detects and corrects these issues before classification, ensuring consistent predictions regardless of capture conditions.
+
+### Calibration Pipeline
+
+| Step | Technique | Purpose |
+|---|---|---|
+| 1. **Lighting Detection** | Channel statistics (RGB mean, std) | Classify as overexposed / underexposed / warm cast / cool cast / low contrast / normal |
+| 2. **Exposure Normalization** | CLAHE in LAB color space | Adaptive histogram equalization — stronger for extreme conditions, lighter for normal |
+| 3. **White Balance Correction** | Gray World algorithm | Scales R/G/B channels toward neutral gray to remove color casts |
+
+### Detected Conditions
+
+| Condition | Trigger | Correction Strength |
+|---|---|---|
+| ☀️ Overexposed | Mean brightness > 200 | Strong CLAHE (clip=4.0) + moderate WB |
+| 🌑 Underexposed | Mean brightness < 50 | Strong CLAHE (clip=4.0) + moderate WB |
+| 🔶 Warm Cast | Red channel dominates by >25 | Standard CLAHE + heavy WB (α=0.9) |
+| 🔷 Cool Cast | Blue channel dominates by >25 | Standard CLAHE + heavy WB (α=0.9) |
+| 🌫️ Low Contrast | Pixel std-dev < 30 | Medium CLAHE (clip=3.5) + moderate WB |
+| ✅ Normal | Within acceptable ranges | Light CLAHE (clip=2.0), no WB correction |
+
+### Calibration Report
+
+Each prediction includes a per-image calibration report showing:
+- Detected lighting condition
+- Corrections applied
+- Brightness delta (change in mean brightness)
+- Before/after image comparison gallery
+
+---
+
 ## Novelty
 
-1. **Post-Classification Branching Pipeline** — Reuses EfficientNetV2's learned visual representations to drive downstream property estimation without retraining
-2. **Hybrid Inference** — Combines deep learning classification with agronomic rule-based heuristics grounded in published spectral soil science
-3. **No specialist hardware required** — Standard smartphone RGB camera is sufficient
-4. **Explainability** — Property estimates are tied to interpretable, published formulas, not black-box predictions
+1. **Self-Calibrating AI** — Automatic lighting detection and image normalization ensures consistent predictions across variable capture environments without manual adjustment
+2. **Post-Classification Branching Pipeline** — Reuses EfficientNetV2's learned visual representations to drive downstream property estimation without retraining
+3. **Hybrid Inference** — Combines deep learning classification with agronomic rule-based heuristics grounded in published spectral soil science
+4. **No specialist hardware required** — Standard smartphone RGB camera is sufficient
+5. **Explainability** — Property estimates are tied to interpretable, published formulas, not black-box predictions
 
 ---
 
