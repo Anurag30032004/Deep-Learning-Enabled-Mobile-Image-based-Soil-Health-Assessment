@@ -24,11 +24,11 @@ def save_uploaded_files(files):
     return files
 
 
-def run_prediction(files):
+def run_prediction(files, enable_calibration=True):
     if not files:
-        return [], []
+        return [], [], []
     save_uploaded_files(files)
-    results = predict_images(UPLOAD_DIR, model)
+    results, calibration_reports = predict_images(UPLOAD_DIR, model, enable_calibration=enable_calibration)
     formatted = []
     explanations = []
     for row in results:
@@ -49,11 +49,59 @@ def run_prediction(files):
         ])
         if kb_explanation and name == "Final Decision":
             explanations.append(kb_explanation)
-    return formatted, explanations
+    return formatted, explanations, calibration_reports
 
 
+# ── Calibration Report Formatter ────────────────────────────────────────
 
-# Modern, colorful CSS for Gradio Blocks
+CONDITION_LABELS = {
+    'overexposed': '☀️ Overexposed',
+    'underexposed': '🌑 Underexposed',
+    'warm_cast': '🔶 Warm Color Cast',
+    'cool_cast': '🔷 Cool Color Cast',
+    'low_contrast': '🌫️ Low Contrast',
+    'normal': '✅ Normal',
+    'error': '❌ Error',
+}
+
+def format_calibration_report(calibration_reports):
+    """Build a Markdown calibration report from the reports list."""
+    if not calibration_reports:
+        return ""
+
+    lines = ["## 🔬 Calibration Report\n"]
+    lines.append("| Image | Condition | Adjustments | Brightness Δ |")
+    lines.append("|-------|-----------|-------------|-------------|")
+    for rpt in calibration_reports:
+        meta = rpt.get('metadata')
+        if meta is None:
+            lines.append(f"| {rpt['image']} | ⏭️ Skipped | Calibration disabled | — |")
+            continue
+        cond = CONDITION_LABELS.get(meta['condition'], meta['condition'])
+        adjustments = "; ".join(meta.get('adjustments', []))
+        delta = meta.get('brightness_delta', 0)
+        delta_str = f"+{delta:.1f}" if delta >= 0 else f"{delta:.1f}"
+        lines.append(f"| {rpt['image']} | {cond} | {adjustments} | {delta_str} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def build_before_after_gallery(calibration_reports):
+    """Build a list of (image_path, label) tuples for the before/after gallery."""
+    gallery_items = []
+    for rpt in calibration_reports:
+        original = rpt.get('original_path', '')
+        calibrated = rpt.get('calibrated_path', '')
+        name = rpt['image']
+        if original and os.path.isfile(original):
+            gallery_items.append((original, f"Original — {name}"))
+        if calibrated and os.path.isfile(calibrated) and calibrated != original:
+            gallery_items.append((calibrated, f"Calibrated — {name}"))
+    return gallery_items
+
+
+# ── Custom CSS ──────────────────────────────────────────────────────────
+
 CUSTOM_CSS = """
 #preview {
     overflow-x: auto;
@@ -100,9 +148,6 @@ CUSTOM_CSS = """
     font-size: 1.2em;
     font-weight: 600;
 }
-"""
-
-CUSTOM_CSS += """
 .better-table th, .better-table td {
     padding: 8px 16px;
     font-size: 1.05em;
@@ -113,7 +158,16 @@ CUSTOM_CSS += """
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     background: #181c24;
 }
+.calibration-toggle {
+    border: 2px solid #4f8cff;
+    border-radius: 8px;
+    padding: 6px 12px;
+    background: rgba(79,140,255,0.06);
+}
 """
+
+
+# ── Build UI ────────────────────────────────────────────────────────────
 
 with gr.Blocks() as demo:
     gr.Markdown("""
@@ -138,6 +192,12 @@ with gr.Blocks() as demo:
                 columns=6,
                 height=220,
                 show_label=True
+            )
+            calibration_toggle = gr.Checkbox(
+                label="🔬 Enable Auto-Calibration (normalizes lighting & color)",
+                value=True,
+                elem_classes=["calibration-toggle"],
+                elem_id="calibration_toggle"
             )
             clear_btn = gr.Button("Reset", elem_classes=["gr-button-secondary"])
 
@@ -171,12 +231,18 @@ with gr.Blocks() as demo:
 
     RESULT_HEADERS = ["Image Name", "Soil Type", "Confidence", "Moisture", "Salinity", "OM Index", "pH Tendency", "Soil Health"]
 
-    def predict_and_feedback(files, user_comment, user_correction):
+    def predict_and_feedback(files, user_comment, user_correction, enable_cal):
         if not files:
-            return gr.update(visible=True, value="**Please upload at least one image to classify.**"), [], [], gr.update(visible=False), ""
-        results, explanations = run_prediction(files)
+            return (
+                gr.update(visible=True, value="**Please upload at least one image to classify.**"),
+                [], [], gr.update(visible=False), "", "", []
+            )
+        results, explanations, calibration_reports = run_prediction(files, enable_calibration=enable_cal)
         if not results:
-            return gr.update(visible=True, value="**No predictions could be made.**"), [], [], gr.update(visible=False), ""
+            return (
+                gr.update(visible=True, value="**No predictions could be made.**"),
+                [], [], gr.update(visible=False), "", "", []
+            )
         final_row = None
         individual_rows = []
         for row in results:
@@ -184,13 +250,36 @@ with gr.Blocks() as demo:
                 final_row = row
             else:
                 individual_rows.append(row)
+
+        # Build calibration report markdown
+        cal_report_md = format_calibration_report(calibration_reports)
+
+        # Build before/after gallery
+        ba_gallery = build_before_after_gallery(calibration_reports)
+
         if final_row:
             explanation_md_val = "\n".join([f"- {ex}" for ex in explanations]) if explanations else ""
             save_feedback(*final_row, explanation_md_val, user_comment, user_correction)
             property_value_rows = [[header, str(val)] for header, val in zip(RESULT_HEADERS, final_row)]
-            return gr.update(visible=False), property_value_rows, gr.update(visible=True, value=individual_rows), gr.update(visible=True), explanation_md_val
+            return (
+                gr.update(visible=False),
+                property_value_rows,
+                gr.update(visible=True, value=individual_rows),
+                gr.update(visible=True),
+                explanation_md_val,
+                cal_report_md,
+                ba_gallery
+            )
         else:
-            return gr.update(visible=False), [], gr.update(visible=True, value=individual_rows), gr.update(visible=True), ""
+            return (
+                gr.update(visible=False),
+                [],
+                gr.update(visible=True, value=individual_rows),
+                gr.update(visible=True),
+                "",
+                cal_report_md,
+                ba_gallery
+            )
 
     with gr.Accordion("Show Individual Image Results", open=False) as indiv_section:
         indiv_table = gr.Dataframe(
@@ -206,10 +295,20 @@ with gr.Blocks() as demo:
             elem_classes=["better-table"]
         )
 
+    with gr.Accordion("🔬 Calibration Report", open=False, visible=True) as cal_section:
+        calibration_report_md = gr.Markdown("", elem_id="calibration_report")
+        ba_gallery = gr.Gallery(
+            label="Before / After Comparison",
+            columns=4,
+            height=260,
+            show_label=True,
+            elem_id="ba_gallery"
+        )
+
     discover_btn.click(
         fn=predict_and_feedback,
-        inputs=[image_input, feedback_comment, feedback_correction],
-        outputs=[status, results_table, indiv_table, indiv_section, explanation_md]
+        inputs=[image_input, feedback_comment, feedback_correction, calibration_toggle],
+        outputs=[status, results_table, indiv_table, indiv_section, explanation_md, calibration_report_md, ba_gallery]
     )
 
     def reset_all():
@@ -225,12 +324,12 @@ with gr.Blocks() as demo:
                     shutil.move(os.path.join(UPLOAD_DIR, f), os.path.join(session_dir, f))
         shutil.rmtree(UPLOAD_DIR, ignore_errors=True)
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        return None, [], gr.update(visible=False), [], gr.update(visible=False), ""
+        return None, [], gr.update(visible=False), [], gr.update(visible=False), "", "", []
 
     clear_btn.click(
         fn=reset_all,
         inputs=None,
-        outputs=[image_input, gallery, status, results_table, indiv_table, explanation_md]
+        outputs=[image_input, gallery, status, results_table, indiv_table, explanation_md, calibration_report_md, ba_gallery]
     )
 
 demo.launch(theme=gr.themes.Soft(), css=CUSTOM_CSS)
