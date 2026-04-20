@@ -7,6 +7,8 @@ from skimage import color
 from skimage.feature import graycomatrix, graycoprops
 import json
 
+from model.calibrator import auto_calibrate, save_calibrated_image
+
 IMG_SIZE = 224
 
 SOIL_TYPES = [
@@ -33,7 +35,7 @@ def load_trained_model(model_path):
     )
 
 
-def predict_images(img_dir, model, class_names=SOIL_TYPES):
+def predict_images(img_dir, model, class_names=SOIL_TYPES, enable_calibration=True):
     valid_exts = (".jpg", ".jpeg", ".png", ".bmp")
 
     img_paths = [
@@ -43,13 +45,39 @@ def predict_images(img_dir, model, class_names=SOIL_TYPES):
     ]
 
     if not img_paths:
-        return []
+        return [], []
 
     all_predictions = []
     per_image_results = []
+    calibration_reports = []  # calibration metadata per image
 
     for img_path in img_paths:
-        img = image.load_img(img_path, target_size=(IMG_SIZE, IMG_SIZE))
+        # ── Auto-calibration ──────────────────────────────────────
+        cal_path = img_path  # fallback: use original
+        cal_meta = None
+        if enable_calibration:
+            try:
+                calibrated_img, cal_meta = auto_calibrate(img_path)
+                cal_path = save_calibrated_image(calibrated_img, img_path)
+            except Exception as e:
+                cal_meta = {
+                    'condition': 'error',
+                    'diagnostics': {},
+                    'adjustments': [f'Calibration failed: {e}'],
+                    'brightness_before': 0,
+                    'brightness_after': 0,
+                    'brightness_delta': 0,
+                }
+                cal_path = img_path  # proceed with original on failure
+        calibration_reports.append({
+            'image': os.path.basename(img_path),
+            'calibrated_path': cal_path,
+            'original_path': img_path,
+            'metadata': cal_meta,
+        })
+
+        # Load the (calibrated) image for model inference
+        img = image.load_img(cal_path, target_size=(IMG_SIZE, IMG_SIZE))
         img_array = image.img_to_array(img)
 
         img_array = tf.keras.applications.efficientnet_v2.preprocess_input(img_array)
@@ -76,8 +104,9 @@ def predict_images(img_dir, model, class_names=SOIL_TYPES):
         intermediate_layer_model = tf.keras.Model(inputs=model.inputs, outputs=model.get_layer(layer_name).output)
         deep_features = intermediate_layer_model.predict(img_array)
 
-        # --- Visual features ---
-        visual = compute_visual_features(img_path)
+        # --- Visual features (use calibrated image) ---
+        visual = compute_visual_features(cal_path)
+
 
         # --- Rule-based properties ---
         props = estimate_properties(soil, visual)
@@ -121,7 +150,7 @@ def predict_images(img_dir, model, class_names=SOIL_TYPES):
         "Final Decision", majority_class, final_confidence,
         moisture, salinity, om_index, ph_tendency, health, kb_explanation
     ))
-    return per_image_results
+    return per_image_results, calibration_reports
 
 
 # --- Deep Feature Extraction ---
